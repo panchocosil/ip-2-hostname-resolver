@@ -3,12 +3,13 @@
 **IP to Hostname Resolver** is a Python-based tool for discovering hostnames associated with IP addresses. It employs various techniques such as reverse DNS lookups, search engine queries, SSL certificate analysis, and passive DNS services.
 
 ## Features
-- Reverse DNS lookups using `dig` and Python's `socket` library.
-- Search engine scraping for hostnames.
-- SSL certificate inspection using `nmap`.
-- Integration with **Certificate Transparency Logs** (`crt.sh`).
-- Passive DNS queries using SecurityTrails API (optional).
-- WHOIS lookups for domain information.
+- Reverse DNS: `dig` (varios resolvers), **DNS over HTTPS (DoH)** (Google, Cloudflare) y `socket`.
+- Búsqueda en **Bing** y **Google** (scraping; Google puede limitar o bloquear con muchas peticiones).
+- SSL: inspección con `nmap` en varios puertos (443, 8443, 4433, 8080, 4443, 9443).
+- **Certificate Transparency** (`crt.sh`).
+- Sondeo HTTP/HTTPS: redirecciones (`Location`) y cabecera **Server** cuando parece hostname.
+- Passive DNS: SecurityTrails API (opcional).
+- WHOIS para información de dominio.
 
 ## Installation
 
@@ -55,18 +56,13 @@ google-public-dns-a.google.com
 
 ## Techniques
 The tool uses the following methods to discover hostnames:
-1. **Reverse DNS Lookups**:
-   - Uses `dig` and Python's `socket` library.
-2. **Search Engine Queries**:
-   - Scrapes Bing search results for IP-related domains.
-3. **SSL Certificate Analysis**:
-   - Extracts domains from SSL certificates using `nmap`.
-4. **Certificate Transparency Logs**:
-   - Queries `crt.sh` for SSL-related domains.
-5. **Passive DNS Lookups** (Optional):
-   - Uses the SecurityTrails API for historical DNS records.
-6. **WHOIS Lookups**:
-   - Fetches domain information from WHOIS records.
+1. **Reverse DNS**: `dig` con varios resolvers (sistema, 8.8.8.8, 1.1.1.1, 8.8.4.4); **DoH** (Google, Cloudflare) para redes donde `dig` está bloqueado; `socket.gethostbyaddr`.
+2. **Search engines**: Bing y Google (búsqueda `ip:X.X.X.X`). Se usa User-Agent tipo navegador; Google puede aplicar límites o bloqueos.
+3. **SSL (nmap)**: Puertos 443, 8443, 4433, 8080, 4443, 9443; extrae CN y SAN de certificados.
+4. **Certificate Transparency**: `crt.sh` por IP.
+5. **HTTP/HTTPS probe**: Redirecciones (`Location`) y cabecera `Server` cuando el valor parece un hostname (FQDN).
+6. **Passive DNS** (opcional): SecurityTrails API.
+7. **WHOIS**: Dominio en registros WHOIS.
 
 ## Requirements
 Ensure the following tools are installed and accessible:
@@ -75,8 +71,8 @@ Ensure the following tools are installed and accessible:
 
 ## Limitations
 - HTTPS verification is disabled for simplicity. Enable it for production use.
-- Rate-limiting may apply for APIs or web scraping.
-- Some techniques rely on external services, which might return incomplete or outdated data.
+- Rate-limiting o bloqueos: Google y Bing pueden limitar o bloquear muchas peticiones; usar con listas moderadas o menos hilos.
+- Algunas técnicas dependen de servicios externos y pueden devolver datos incompletos o antiguos.
 
 ## Contributing
 Contributions are welcome! If you have ideas for additional hostname discovery techniques or improvements, feel free to open an issue or submit a pull request.
