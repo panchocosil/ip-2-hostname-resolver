@@ -155,12 +155,14 @@ def search_google(ip, timeout=10):
 
 # Nmap SSL-cert scan (más puertos = más cobertura, mayor tiempo)
 SSL_PORTS = '443,8443,4433,8080,4443,9443'
-def nmap_ssl_cert(ip, timeout=60):
+NMAP_TIMEOUT = 120  # segundos; configurable con --nmap-timeout
+def nmap_ssl_cert(ip, timeout=None):
+    to = (timeout if timeout is not None else NMAP_TIMEOUT)
     hostnames = set()
     try:
         result = subprocess.run(
             ['nmap', f'-p{SSL_PORTS}', '-Pn', '--script', 'ssl-cert', ip],
-            capture_output=True, text=True, timeout=timeout
+            capture_output=True, text=True, timeout=to
         )
         output = result.stdout
         for line in output.split('\n'):
@@ -262,20 +264,48 @@ def http_probe(ip, timeout=8):
     return hostnames
 
 
-# WHOIS lookup
+# WHOIS lookup (python-whois; si falla, fallback a whois por línea de comandos)
 def whois_lookup(ip):
     hostnames = set()
     try:
-        import whois
-        data = whois.whois(ip)
+        import whois as whois_mod
+        query = getattr(whois_mod, 'whois', None)
+        if query is None:
+            raise AttributeError('whois.whois no existe: instala con pip install python-whois')
+        data = query(ip)
         if data.domain_name:
             if isinstance(data.domain_name, list):
-                hostnames.update([d.lower() for d in data.domain_name])
+                hostnames.update([str(d).lower() for d in data.domain_name if d])
             else:
-                hostnames.add(data.domain_name.lower())
+                hostnames.add(str(data.domain_name).lower())
+    except AttributeError as e:
+        hostnames.update(_whois_subprocess_fallback(ip))
+        if not hostnames:
+            print(f"WHOIS IP {ip}: {e}. Prueba: pip install python-whois")
     except Exception as e:
-        print(f"Error performing WHOIS lookup for IP {ip}: {e}")
+        hostnames.update(_whois_subprocess_fallback(ip))
+        if not hostnames:
+            print(f"Error performing WHOIS lookup for IP {ip}: {e}")
     return hostnames
+
+
+def _whois_subprocess_fallback(ip, timeout=15):
+    """Fallback: ejecutar whois por CLI y extraer NetName/descr si parecen hostname."""
+    out = set()
+    try:
+        r = subprocess.run(['whois', ip], capture_output=True, text=True, timeout=timeout)
+        text = (r.stdout or '') + (r.stderr or '')
+        for line in text.splitlines():
+            line = line.strip()
+            for key in ('NetName:', 'netname:', 'descr:', 'OrgName:', 'org-name:'):
+                if line.lower().startswith(key.lower()):
+                    val = line.split(':', 1)[-1].strip()
+                    if val and re.match(r'^[a-z0-9]([a-z0-9.-]*[a-z0-9])?\.(com|net|org|io|app|[a-z]{2,})$', val, re.I):
+                        out.add(val.lower().rstrip('.'))
+                    break
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        pass
+    return out
 
 
 # Aggregate all methods
@@ -306,17 +336,19 @@ def process_ip(ip, api_key):
 
 
 def main():
-    global VERIFY_SSL
+    global VERIFY_SSL, NMAP_TIMEOUT
     parser = argparse.ArgumentParser(description='Get hostnames associated with IPs')
     parser.add_argument('-l', '--list', help='Input file containing IP addresses', required=True)
     parser.add_argument('-o', '--output', help='Output file for hostnames', required=True)
     parser.add_argument('-ssl', '--no-ssl', action='store_true', help='Disable SSL certificate verification')
     parser.add_argument('--api-key', help='API key for SecurityTrails (optional)', required=False)
     parser.add_argument('--threads', help='Number of threads for parallel execution', type=int, default=10)
+    parser.add_argument('--nmap-timeout', type=int, default=120, metavar='SEC', help='Timeout en segundos para el escaneo nmap ssl-cert (default: 120)')
     args = parser.parse_args()
 
     if args.no_ssl:
         VERIFY_SSL = False  # desactivar verificación SSL en todas las peticiones
+    NMAP_TIMEOUT = args.nmap_timeout
 
     with open(args.list, 'r') as f:
         ip_list = [line.strip() for line in f if line.strip()]
